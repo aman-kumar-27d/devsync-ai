@@ -1,0 +1,75 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { connectDB } from '@/lib/mongodb';
+import { Message } from '@/models/Message';
+import { User } from '@/models/User';
+
+// PATCH /api/messages/[id]  — edit message
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+    try {
+        await connectDB();
+        const guestId = req.cookies.get('guestId')?.value;
+        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const user = await User.findOne({ guestId }).lean();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const { content } = await req.json();
+        if (!content || typeof content !== 'string') {
+            return NextResponse.json({ error: 'Content is required' }, { status: 400 });
+        }
+
+        const message = await Message.findOne({ _id: params.id, senderId: user._id });
+        if (!message) return NextResponse.json({ error: 'Not found or not authorized' }, { status: 404 });
+        if (message.deletedAt) return NextResponse.json({ error: 'Cannot edit a deleted message' }, { status: 400 });
+
+        message.content = content.slice(0, 10000);
+        message.editedAt = new Date();
+        await message.save();
+
+        if (global.io) {
+            global.io.to(`channel:${message.channelId}`).emit('message:edited', {
+                _id: params.id,
+                content: message.content,
+                editedAt: message.editedAt,
+                channelId: message.channelId,
+            });
+        }
+
+        return NextResponse.json({ message });
+    } catch (err) {
+        console.error('[message PATCH]', err);
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    }
+}
+
+// DELETE /api/messages/[id]  — soft-delete
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+    try {
+        await connectDB();
+        const guestId = req.cookies.get('guestId')?.value;
+        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const user = await User.findOne({ guestId }).lean();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const message = await Message.findOne({ _id: params.id, senderId: user._id });
+        if (!message) return NextResponse.json({ error: 'Not found or not authorized' }, { status: 404 });
+
+        message.deletedAt = new Date();
+        await message.save();
+
+        if (global.io) {
+            global.io.to(`channel:${message.channelId}`).emit('message:deleted', {
+                _id: params.id,
+                channelId: message.channelId,
+            });
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (err) {
+        console.error('[message DELETE]', err);
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    }
+}
+
+// POST /api/messages/[id]/react  — handled at /api/messages/[id]/react/route.ts

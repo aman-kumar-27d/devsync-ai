@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { connectDB } from '@/lib/mongodb';
+import { Message } from '@/models/Message';
+import { User } from '@/models/User';
+
+// POST /api/messages/[id]/react  — toggle a reaction emoji
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+    try {
+        await connectDB();
+        const guestId = req.cookies.get('guestId')?.value;
+        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const user = await User.findOne({ guestId }).lean();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const { emoji } = await req.json();
+        if (!emoji || typeof emoji !== 'string') {
+            return NextResponse.json({ error: 'Emoji is required' }, { status: 400 });
+        }
+
+        const message = await Message.findById(params.id);
+        if (!message) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+        const existing = message.reactions.find((r) => r.emoji === emoji);
+        if (existing) {
+            const idx = existing.userIds.findIndex((id) => id.toString() === user._id.toString());
+            if (idx >= 0) {
+                existing.userIds.splice(idx, 1);
+                if (existing.userIds.length === 0) {
+                    message.reactions = message.reactions.filter((r) => r.emoji !== emoji);
+                }
+            } else {
+                existing.userIds.push(user._id);
+            }
+        } else {
+            message.reactions.push({ emoji, userIds: [user._id] });
+        }
+
+        await message.save();
+
+        if (global.io) {
+            global.io.to(`channel:${message.channelId}`).emit('message:reacted', {
+                _id: params.id,
+                reactions: message.reactions,
+                channelId: message.channelId,
+            });
+        }
+
+        return NextResponse.json({ reactions: message.reactions });
+    } catch (err) {
+        console.error('[react POST]', err);
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    }
+}

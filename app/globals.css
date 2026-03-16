@@ -2,26 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #f8f9fa;
+    --bg-secondary: #ffffff;
+    --bg-hover: #e9ecef;
+    --border: #dee2e6;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
   }
-}
+  .dark {
+    --bg: #0f1117;
+    --bg-secondary: #1a1d27;
+    --bg-hover: #252836;
+    --border: #2d3143;
+    --text: #e2e8f0;
+    --text-muted: #8892a4;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+  }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  html {
+    @apply text-sm antialiased;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family:
+      "Inter",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    @apply h-screen overflow-hidden;
+  }
+
+  * {
+    @apply border-[var(--border)];
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-[var(--border)];
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  .bg-primary {
+    background-color: var(--bg);
+  }
+  .bg-secondary {
+    background-color: var(--bg-secondary);
+  }
+  .text-primary {
+    color: var(--text);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+  .border-subtle {
+    border-color: var(--border);
+  }
+  .hover-bg:hover {
+    background-color: var(--bg-hover);
   }
 }

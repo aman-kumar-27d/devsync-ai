@@ -1,0 +1,123 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { connectDB } from '@/lib/mongodb';
+import { AiSession } from '@/models/AiSession';
+import { User } from '@/models/User';
+import { getFlashModel, getProModel } from '@/lib/gemini';
+import { buildSystemPrompt, buildUserMessage, AiMode } from '@/lib/promptEngine';
+
+// Simple in-memory rate limiter: max 30 requests per guestId per minute
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(guestId: string): boolean {
+    const now = Date.now();
+    const entry = rateLimitMap.get(guestId);
+    if (!entry || now > entry.resetAt) {
+        rateLimitMap.set(guestId, { count: 1, resetAt: now + 60_000 });
+        return true;
+    }
+    if (entry.count >= 30) return false;
+    entry.count++;
+    return true;
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        await connectDB();
+        const guestId = req.cookies.get('guestId')?.value;
+        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        if (!checkRateLimit(guestId)) {
+            return NextResponse.json({ error: 'Rate limit exceeded. Try again in a moment.' }, { status: 429 });
+        }
+
+        const user = await User.findOne({ guestId }).lean();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const body = await req.json();
+        const { message, mode = 'chat', useProModel = false, workspaceId } = body as {
+            message: string;
+            mode: AiMode;
+            useProModel: boolean;
+            workspaceId?: string;
+        };
+
+        if (!message || typeof message !== 'string' || message.trim().length === 0) {
+            return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+        }
+
+        // Load / create session
+        let session = await AiSession.findOne({ userId: user._id, mode });
+        if (!session) {
+            session = new AiSession({ userId: user._id, mode, history: [], workspaceId });
+        }
+
+        const systemInstruction = buildSystemPrompt(mode);
+        const userText = buildUserMessage(mode, message.slice(0, 8000));
+
+        const model = useProModel ? getProModel(systemInstruction) : getFlashModel(systemInstruction);
+        const chat = model.startChat({
+            history: session.history.slice(-20), // last 20 turns
+        });
+
+        // Streaming response
+        const result = await chat.sendMessageStream(userText);
+
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+            async start(controller) {
+                let fullText = '';
+                try {
+                    for await (const chunk of result.stream) {
+                        const text = chunk.text();
+                        fullText += text;
+                        controller.enqueue(encoder.encode(text));
+                    }
+                } finally {
+                    // Persist to history (trim to last 20 turns)
+                    session!.history.push({ role: 'user', parts: [{ text: userText }] });
+                    session!.history.push({ role: 'model', parts: [{ text: fullText }] });
+                    if (session!.history.length > 40) session!.history = session!.history.slice(-40);
+                    await session!.save();
+                    controller.close();
+                }
+            },
+        });
+
+        return new Response(stream, {
+            headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+                'X-Accel-Buffering': 'no',
+            },
+        });
+    } catch (err) {
+        console.error('[ai/chat POST]', err);
+        return NextResponse.json({ error: 'AI service error' }, { status: 500 });
+    }
+}
+
+// DELETE /api/ai/chat  — clear session history for a mode
+export async function DELETE(req: NextRequest) {
+    try {
+        await connectDB();
+        const guestId = req.cookies.get('guestId')?.value;
+        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const user = await User.findOne({ guestId }).lean();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const { searchParams } = new URL(req.url);
+        const mode = searchParams.get('mode') as AiMode | null;
+
+        if (mode) {
+            await AiSession.findOneAndUpdate({ userId: user._id, mode }, { history: [] });
+        } else {
+            await AiSession.updateMany({ userId: user._id }, { history: [] });
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (err) {
+        console.error('[ai/chat DELETE]', err);
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    }
+}
