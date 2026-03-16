@@ -208,11 +208,51 @@ $randomHex = ([System.Guid]::NewGuid().ToString('N')).Substring(0, 24)
 $missingPeer = Invoke-Api -Method GET -Url "$BaseUrl/api/dm/$randomHex/messages" -Session $sessionA
 Assert-Status -Name "missing DM peer returns 404" -Actual $missingPeer.StatusCode -Expected @(404) -Failures ([ref]$failures)
 
+# ---------------------------------------------------------------------------
+# Rate-limit burst checks
+# ---------------------------------------------------------------------------
+# Login: 10 req/min limit keyed by email+IP.
+# We use a unique email (with run suffix) so each run gets its own window.
+# Requests 1-10 should return 401 (wrong password); request 11 should be 429.
+Write-Host "`nRunning rate-limit burst checks..."
+
+$rlEmail = "rl-burst-$suffix@example.com"
+$rlSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$loginBurstLast = 0
+for ($i = 0; $i -lt 11; $i++) {
+    $r = Invoke-Api -Method POST -Url "$BaseUrl/api/auth/login" -Session $rlSession -Body @{
+        email    = $rlEmail
+        password = "WrongPass999!"
+    }
+    $loginBurstLast = $r.StatusCode
+}
+Assert-Status -Name "login rate limit triggers 429 after 11-burst" -Actual $loginBurstLast -Expected @(429) -Failures ([ref]$failures)
+
+# Register: 5 req/hour limit keyed by IP (same session = same IP in local testing).
+# We register 3 users at the top of this script, so 3 more attempts here should
+# push us over the 5/hr cap and yield 429 on attempt 6+.
+# Use fresh random emails so we don't collide with the email+IP sub-limit.
+Write-Host "Running register IP burst check (expects 429 once IP cap exceeded)..."
+$regBurstSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$regBurstLast = 0
+for ($i = 0; $i -lt 3; $i++) {
+    $rSuffix = Get-RandomSuffix
+    $r = Invoke-Api -Method POST -Url "$BaseUrl/api/auth/register" -Session $regBurstSession -Body @{
+        email    = "rl-reg-$rSuffix@example.com"
+        username = "rlreg_$rSuffix"
+        password = "Passw0rd!R"
+    }
+    $regBurstLast = $r.StatusCode
+}
+Assert-Status -Name "register IP rate limit triggers 429 after excess registrations" -Actual $regBurstLast -Expected @(429) -Failures ([ref]$failures)
+
+# ---------------------------------------------------------------------------
+
 if ($failures.Count -gt 0) {
-    Write-Host "\nRegression completed with failures:" -ForegroundColor Red
+    Write-Host "`nRegression completed with failures:" -ForegroundColor Red
     $failures | ForEach-Object { Write-Host " - $_" -ForegroundColor Red }
     exit 1
 }
 
-Write-Host "\nAll API regression checks passed." -ForegroundColor Green
+Write-Host "`nAll API regression checks passed." -ForegroundColor Green
 exit 0
