@@ -4,7 +4,8 @@ export type AiMode =
     | 'bugfix'
     | 'explain'
     | 'docs'
-    | 'refactor';
+    | 'refactor'
+    | 'repo';
 
 const systemPrompts: Record<AiMode, string> = {
     chat: `You are a helpful AI assistant for software developers. 
@@ -40,13 +41,29 @@ Analyze the provided code and suggest refactoring improvements for:
 - DRY principle compliance
 - Error handling improvements
 Provide the refactored code in a code fence with inline comments explaining changes.`,
+
+    repo: `You are a repository-aware AI assistant for a software development team.
+You have been given recent code snippets and messages from the team's workspace as context.
+Use this context to answer questions about the codebase, suggest changes that fit the existing patterns,
+or explain how specific parts of the code interact.
+Always reference specific snippets or messages when relevant.
+If the user asks about something not covered by the provided context, say so clearly.`,
 };
 
 export function buildSystemPrompt(mode: AiMode): string {
     return systemPrompts[mode];
 }
 
-export function buildUserMessage(mode: AiMode, userContent: string): string {
+export function buildUserMessage(mode: AiMode, userContent: string, repoContext?: string): string {
+    if (mode === 'repo' && repoContext) {
+        return `Workspace context (recent snippets and messages):
+
+${repoContext}
+
+---
+
+User question: ${userContent}`;
+    }
     if (mode === 'explain' || mode === 'bugfix' || mode === 'docs' || mode === 'refactor') {
         return `Here is the code:\n\n${userContent}`;
     }

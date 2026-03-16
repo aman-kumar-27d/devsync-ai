@@ -14,6 +14,7 @@ const MODES: { value: AiMode; label: string; icon: string }[] = [
     { value: 'explain', label: 'Explain', icon: '🔍' },
     { value: 'docs', label: 'Docs', icon: '📝' },
     { value: 'refactor', label: 'Refactor', icon: '♻️' },
+    { value: 'repo', label: 'Repo', icon: '🗂️' },
 ];
 
 export default function ModeSelector({ current, onChange }: Props) {

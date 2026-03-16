@@ -15,6 +15,7 @@ interface ChatEntry {
 interface Props {
     onClose: () => void;
     initialSnippet?: string;
+    workspaceId?: string;
 }
 
 const MODE_LABELS: Record<AiMode, string> = {
@@ -24,15 +25,33 @@ const MODE_LABELS: Record<AiMode, string> = {
     explain: 'Explain',
     docs: 'Docs',
     refactor: 'Refactor',
+    repo: 'Repo Context',
 };
 
-export default function AiPanel({ onClose, initialSnippet }: Props) {
+export default function AiPanel({ onClose, initialSnippet, workspaceId }: Props) {
     const [mode, setMode] = useState<AiMode>('chat');
     const [input, setInput] = useState(initialSnippet ?? '');
     const [history, setHistory] = useState<ChatEntry[]>([]);
     const [streaming, setStreaming] = useState(false);
     const [streamingText, setStreamingText] = useState('');
+    const [repoContext, setRepoContext] = useState<string | undefined>();
     const bottomRef = useRef<HTMLDivElement>(null);
+
+    // When entering repo mode, fetch recent snippets as context
+    useEffect(() => {
+        if (mode !== 'repo' || !workspaceId) return;
+        fetch(`/api/snippets?workspaceId=${workspaceId}&limit=10`)
+            .then((r) => r.json())
+            .then((d) => {
+                const snippets: { language: string; code: string; aiExplanation?: string }[] = d.snippets ?? [];
+                if (snippets.length === 0) return;
+                const ctx = snippets
+                    .map((s, i) => `[Snippet ${i + 1}] (${s.language})\n${s.code}`)
+                    .join('\n\n');
+                setRepoContext(ctx);
+            })
+            .catch(() => { /* fail silently — repo mode still works without context */ });
+    }, [mode, workspaceId]);
 
     useEffect(() => {
         if (initialSnippet) {
@@ -58,7 +77,12 @@ export default function AiPanel({ onClose, initialSnippet }: Props) {
             const res = await fetch('/api/ai/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: trimmed, mode }),
+                body: JSON.stringify({
+                    message: trimmed,
+                    mode,
+                    workspaceId,
+                    repoContext: mode === 'repo' ? repoContext : undefined,
+                }),
             });
 
             if (!res.ok) {

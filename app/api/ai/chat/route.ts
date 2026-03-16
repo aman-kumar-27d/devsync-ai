@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { message, mode = 'chat', useProModel = false, workspaceId } = body as {
+        const { message, mode = 'chat', useProModel = false, workspaceId, repoContext } = body as {
             message: string;
             mode: AiMode;
             useProModel: boolean;
             workspaceId?: string;
+            repoContext?: string; // optional workspace snippets/messages context for repo mode
         };
 
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
         }
 
         const systemInstruction = buildSystemPrompt(mode);
-        const userText = buildUserMessage(mode, message.slice(0, 8000));
+        const userText = buildUserMessage(mode, message.slice(0, 8000), repoContext?.slice(0, 4000));
 
         const model = useProModel ? getProModel(systemInstruction) : getFlashModel(systemInstruction);
         const chat = model.startChat({

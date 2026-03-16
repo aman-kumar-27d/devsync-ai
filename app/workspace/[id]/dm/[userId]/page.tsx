@@ -124,7 +124,7 @@ export default function DmPage() {
                     <MessageComposer peerId={peerId} workspaceId={workspaceId} />
                 </div>
             </main>
-            {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
+            {aiOpen && <AiPanel onClose={() => setAiOpen(false)} workspaceId={workspaceId} />}
         </div>
     );
 }

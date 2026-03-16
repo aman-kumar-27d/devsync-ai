@@ -183,6 +183,7 @@ export default function ChannelPage() {
                 <AiPanel
                     onClose={() => { setAiOpen(false); setAiSnippet(undefined); }}
                     initialSnippet={aiSnippet}
+                    workspaceId={workspaceId}
                 />
             )}
         </div>
