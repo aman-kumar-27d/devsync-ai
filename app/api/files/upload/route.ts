@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { connectDB } from '@/lib/mongodb';
 import { requireAuthUser } from '@/lib/auth';
 import { File } from '@/models/File';
+import { assertWorkspaceMember } from '@/lib/guards';
 
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
@@ -23,6 +24,8 @@ export async function POST(req: NextRequest) {
 
         const workspaceId = req.nextUrl.searchParams.get('workspaceId');
         if (!workspaceId) return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });
+
+        await assertWorkspaceMember(user._id.toString(), workspaceId);
 
         const formData = await req.formData();
         const file = formData.get('file') as File | null;
@@ -57,6 +60,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ file: fileDoc }, { status: 201 });
     } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 403 || status === 404) {
+            return NextResponse.json({ error: (err as Error).message }, { status });
+        }
         console.error('[files/upload POST]', err);
         return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
     }

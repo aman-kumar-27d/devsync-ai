@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
+import { resolveChannelWorkspace, assertWorkspaceMember } from '@/lib/guards';
 
 // POST /api/messages/[id]/react  — toggle a reaction emoji
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -17,6 +18,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
         const message = await Message.findById(params.id);
         if (!message) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+        if (message.channelId) {
+            const workspaceId = await resolveChannelWorkspace(message.channelId.toString());
+            await assertWorkspaceMember(user._id.toString(), workspaceId);
+        }
 
         const existing = message.reactions.find((r) => r.emoji === emoji);
         if (existing) {
@@ -45,6 +51,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
         return NextResponse.json({ reactions: message.reactions });
     } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 403 || status === 404) {
+            return NextResponse.json({ error: (err as Error).message }, { status });
+        }
         console.error('[react POST]', err);
         return NextResponse.json({ error: 'Server error' }, { status: 500 });
     }

@@ -3,18 +3,21 @@ import { connectDB } from '@/lib/mongodb';
 import { requireAuthUser } from '@/lib/auth';
 import { Snippet } from '@/models/Snippet';
 import { getFlashModel } from '@/lib/gemini';
+import { assertWorkspaceMember } from '@/lib/guards';
 
 // POST /api/snippets  — save a snippet and optionally get AI explanation
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
-        const { error } = await requireAuthUser(req);
-        if (error) return error;
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { messageId, workspaceId, code, language = 'plaintext', explain = false } = await req.json();
         if (!code || !messageId || !workspaceId) {
             return NextResponse.json({ error: 'code, messageId, and workspaceId are required' }, { status: 400 });
         }
+
+        await assertWorkspaceMember(user._id.toString(), workspaceId);
 
         let aiExplanation: string | undefined;
         if (explain) {
@@ -56,6 +59,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ snippet }, { status: 201 });
     } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 403 || status === 404) {
+            return NextResponse.json({ error: (err as Error).message }, { status });
+        }
         console.error('[snippets POST]', err);
         return NextResponse.json({ error: 'Server error' }, { status: 500 });
     }

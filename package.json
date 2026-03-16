@@ -6,7 +6,8 @@
     "dev": "node server.js",
     "build": "next build",
     "start": "cross-env NODE_ENV=production node server.js",
-    "lint": "next lint"
+    "lint": "next lint",
+    "qa:api-regression": "powershell -ExecutionPolicy Bypass -File scripts/qa/api-regression.ps1"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
