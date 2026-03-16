@@ -5,17 +5,38 @@ import { AiSession } from '@/models/AiSession';
 import { getFlashModel, getProModel } from '@/lib/gemini';
 import { buildSystemPrompt, buildUserMessage, AiMode } from '@/lib/promptEngine';
 
-// Simple in-memory rate limiter: max 30 requests per user per minute
+// Simple in-memory rate limiter: max 30 requests per user per minute.
+// Includes periodic pruning so stale entries do not accumulate indefinitely.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
+const RATE_LIMIT_PRUNE_INTERVAL_MS = 5 * 60_000;
+let lastRateLimitPruneAt = 0;
+
+function pruneRateLimitMap(now: number) {
+    if (now - lastRateLimitPruneAt < RATE_LIMIT_PRUNE_INTERVAL_MS) {
+        return;
+    }
+
+    rateLimitMap.forEach((entry, userId) => {
+        if (now > entry.resetAt) {
+            rateLimitMap.delete(userId);
+        }
+    });
+
+    lastRateLimitPruneAt = now;
+}
 
 function checkRateLimit(userId: string): boolean {
     const now = Date.now();
+    pruneRateLimitMap(now);
+
     const entry = rateLimitMap.get(userId);
     if (!entry || now > entry.resetAt) {
-        rateLimitMap.set(userId, { count: 1, resetAt: now + 60_000 });
+        rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
         return true;
     }
-    if (entry.count >= 30) return false;
+    if (entry.count >= RATE_LIMIT_MAX_REQUESTS) return false;
     entry.count++;
     return true;
 }

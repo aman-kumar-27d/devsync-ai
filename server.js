@@ -96,18 +96,6 @@ app.prepare().then(() => {
         // Send a message in a channel
         socket.on('message:send', (message) => {
             io.to(`channel:${message.channelId}`).emit('message:new', message);
-            // Emit mention notifications
-            const mentionPattern = /@([a-zA-Z0-9_-]+)/g;
-            let match;
-            while ((match = mentionPattern.exec(message.content)) !== null) {
-                const username = match[1];
-                io.emit('notification:mention', {
-                    recipientUsername: username,
-                    senderId: message.senderId,
-                    messageId: message._id,
-                    channelId: message.channelId,
-                });
-            }
         });
 
         // Send a DM
