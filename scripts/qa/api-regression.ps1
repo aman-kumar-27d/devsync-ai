@@ -123,6 +123,25 @@ Assert-Status -Name "register user B" -Actual $regB.StatusCode -Expected @(201) 
 $regC = Invoke-Api -Method POST -Url "$BaseUrl/api/auth/register" -Session $sessionC -Body $userC
 Assert-Status -Name "register user C" -Actual $regC.StatusCode -Expected @(201) -Failures ([ref]$failures)
 
+$userAId = $null
+$userBId = $null
+$userCId = $null
+
+if ($regA.Body -and $regA.Body.user -and $regA.Body.user._id) { $userAId = [string]$regA.Body.user._id }
+if ($regB.Body -and $regB.Body.user -and $regB.Body.user._id) { $userBId = [string]$regB.Body.user._id }
+if ($regC.Body -and $regC.Body.user -and $regC.Body.user._id) { $userCId = [string]$regC.Body.user._id }
+
+if ([string]::IsNullOrWhiteSpace($userCId)) {
+    Write-Host "FAIL unable to resolve user C id for DM isolation checks" -ForegroundColor Red
+    $failures += 'resolve user C id'
+} else {
+    $dmIsolationGet = Invoke-Api -Method GET -Url "$BaseUrl/api/dm/$userCId/messages" -Session $sessionA
+    Assert-Status -Name "dm isolation GET denies non-shared workspace peer" -Actual $dmIsolationGet.StatusCode -Expected @(403) -Failures ([ref]$failures)
+
+    $dmIsolationPost = Invoke-Api -Method POST -Url "$BaseUrl/api/dm/$userCId/messages" -Session $sessionA -Body @{ content = "should be blocked" }
+    Assert-Status -Name "dm isolation POST denies non-shared workspace peer" -Actual $dmIsolationPost.StatusCode -Expected @(403) -Failures ([ref]$failures)
+}
+
 $workspaceId = $null
 $channelId = $null
 $inviteToken = $null
