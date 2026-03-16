@@ -16,20 +16,17 @@ import {
     userGuideSections,
 } from '@/components/docs/docsContent';
 
+const sectionLinks = [
+    { href: '#tracks', label: 'Documentation tracks' },
+    { href: '#user-guide', label: 'User section' },
+    { href: '#open-source', label: 'Open-source section' },
+];
+
 export default function DocumentationPage() {
     return (
         <DocsFrame
             title="Platform docs and open-source setup"
             description="A clear split between user operations and open-source contributor setup."
-            links={[
-                { href: '/docs/user', label: 'Detailed user pages' },
-                { href: '/docs/open-source', label: 'Detailed open-source pages' },
-            ]}
-            toc={[
-                { href: '#overview', label: 'Overview' },
-                { href: '#user-guide', label: 'User section' },
-                { href: '#open-source', label: 'Open-source section' },
-            ]}
         >
             <section
                 id="overview"
@@ -106,6 +103,21 @@ export default function DocumentationPage() {
                             </div>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <section className="mt-6 rounded-[24px] border border-subtle bg-secondary p-5" id="overview-toc">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[var(--accent)]">On this page</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {sectionLinks.map((link) => (
+                        <a
+                            key={link.href}
+                            href={link.href}
+                            className="rounded-full border border-subtle bg-primary px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                        >
+                            {link.label}
+                        </a>
+                    ))}
                 </div>
             </section>
 
