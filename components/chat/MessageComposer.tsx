@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useRef, KeyboardEvent } from 'react';
+import { useState, useRef, useCallback, KeyboardEvent } from 'react';
 import toast from 'react-hot-toast';
 import CodeComposer from '@/components/code/CodeComposer';
 import FileUploadButton from '@/components/files/FileUploadButton';
+import { getSocket } from '@/lib/socket';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
     channelId?: string;
@@ -15,15 +17,48 @@ interface Props {
 }
 
 export default function MessageComposer({ channelId, peerId, workspaceId, threadId, placeholder, onSent }: Props) {
+    const { user } = useAuth();
     const [content, setContent] = useState('');
     const [sending, setSending] = useState(false);
     const [showCodeComposer, setShowCodeComposer] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isTypingRef = useRef(false);
+
+    const getTypingRoom = useCallback((): string | null => {
+        if (channelId) return `channel:${channelId}`;
+        if (peerId && user) return `dm:${[user._id, peerId].sort().join('-')}`;
+        return null;
+    }, [channelId, peerId, user]);
+
+    const emitTypingStop = useCallback(() => {
+        const roomId = getTypingRoom();
+        if (!roomId || !user || !isTypingRef.current) return;
+        isTypingRef.current = false;
+        getSocket().emit('typing:stop', { roomId, userId: user._id });
+    }, [getTypingRoom, user]);
+
+    const emitTypingStart = useCallback(() => {
+        const roomId = getTypingRoom();
+        if (!roomId || !user) return;
+        if (!isTypingRef.current) {
+            isTypingRef.current = true;
+            getSocket().emit('typing:start', { roomId, userId: user._id, username: user.username });
+        }
+        // Reset inactivity timer
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => {
+            emitTypingStop();
+        }, 3000);
+    }, [getTypingRoom, user, emitTypingStop]);
 
     async function send() {
         const trimmed = content.trim();
         if (!trimmed || sending) return;
         setSending(true);
+        // Stop typing indicator immediately on send
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        emitTypingStop();
         try {
             let url: string;
             let body: Record<string, unknown>;
@@ -64,8 +99,14 @@ export default function MessageComposer({ channelId, peerId, workspaceId, thread
         if (val === '/code') {
             setContent('');
             setShowCodeComposer(true);
+            emitTypingStop();
         } else {
             setContent(val);
+            if (val.trim()) {
+                emitTypingStart();
+            } else {
+                emitTypingStop();
+            }
         }
         // Auto-resize
         const el = textareaRef.current;
@@ -91,6 +132,7 @@ export default function MessageComposer({ channelId, peerId, workspaceId, thread
                     value={content}
                     onChange={(e) => onChange(e.target.value)}
                     onKeyDown={onKeyDown}
+                    onBlur={emitTypingStop}
                     placeholder={placeholder ?? 'Message… (type /code for a snippet)'}
                     disabled={sending}
                     rows={1}
