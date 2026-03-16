@@ -10,6 +10,7 @@ export function getSocket(): Socket {
             // Match server.js Socket.IO endpoint (default path)
             path: '/socket.io',
             addTrailingSlash: false,
+            autoConnect: false,
         });
     }
     return socket;

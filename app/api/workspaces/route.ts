@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Workspace } from '@/models/Workspace';
 import { Channel } from '@/models/Channel';
 import { User } from '@/models/User';
@@ -9,11 +10,8 @@ import { User } from '@/models/User';
 export async function GET(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const workspaces = await Workspace.find({ members: user._id })
             .populate('channels', 'name type')
@@ -30,27 +28,29 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId });
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { name } = await req.json();
         if (!name || typeof name !== 'string' || name.trim().length === 0) {
             return NextResponse.json({ error: 'Workspace name is required' }, { status: 400 });
         }
 
-        const general = await Channel.create({ name: 'general', type: 'text' as const });
         const workspace = await Workspace.create({
             name: name.trim().slice(0, 50),
             ownerId: user._id,
             members: [user._id],
-            channels: [general._id],
+            channels: [],
             inviteToken: uuidv4(),
         });
 
-        await Channel.findByIdAndUpdate(general._id, { workspaceId: workspace._id });
+        const general = await Channel.create({
+            workspaceId: workspace._id,
+            name: 'general',
+            type: 'text' as const,
+        });
+
+        await Workspace.findByIdAndUpdate(workspace._id, { $set: { channels: [general._id] } });
         await User.findByIdAndUpdate(user._id, { $addToSet: { workspaces: workspace._id } });
 
         return NextResponse.json({ workspace }, { status: 201 });

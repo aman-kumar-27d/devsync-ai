@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
-import { User } from '@/models/User';
 
 // PATCH /api/messages/[id]  — edit message
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { content } = await req.json();
         if (!content || typeof content !== 'string') {
@@ -46,11 +43,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const message = await Message.findOne({ _id: params.id, senderId: user._id });
         if (!message) return NextResponse.json({ error: 'Not found or not authorized' }, { status: 404 });

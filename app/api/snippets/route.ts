@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Snippet } from '@/models/Snippet';
-import { User } from '@/models/User';
 import { getFlashModel } from '@/lib/gemini';
 
 // POST /api/snippets  — save a snippet and optionally get AI explanation
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { error } = await requireAuthUser(req);
+        if (error) return error;
 
         const { messageId, workspaceId, code, language = 'plaintext', explain = false } = await req.json();
         if (!code || !messageId || !workspaceId) {

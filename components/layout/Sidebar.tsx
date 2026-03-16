@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function Sidebar({ workspace, onToggleAi }: Props) {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const params = useParams<{ id: string; channelId?: string; userId?: string }>();
     const router = useRouter();
     const [newChannelName, setNewChannelName] = useState('');
@@ -129,8 +129,8 @@ export default function Sidebar({ workspace, onToggleAi }: Props) {
                                 <Link
                                     href={`/workspace/${workspace._id}/channel/${ch._id}`}
                                     className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm hover-bg ${params.channelId === ch._id
-                                            ? 'bg-[var(--accent)] text-white'
-                                            : 'text-muted hover:text-primary'
+                                        ? 'bg-[var(--accent)] text-white'
+                                        : 'text-muted hover:text-primary'
                                         }`}
                                 >
                                     <span className="opacity-60">#</span>
@@ -154,8 +154,8 @@ export default function Sidebar({ workspace, onToggleAi }: Props) {
                                     <Link
                                         href={`/workspace/${workspace._id}/dm/${m._id}`}
                                         className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm hover-bg ${params.userId === m._id
-                                                ? 'bg-[var(--accent)] text-white'
-                                                : 'text-muted hover:text-primary'
+                                            ? 'bg-[var(--accent)] text-white'
+                                            : 'text-muted hover:text-primary'
                                             }`}
                                     >
                                         <span
@@ -185,6 +185,13 @@ export default function Sidebar({ workspace, onToggleAi }: Props) {
                 </div>
                 <div className="flex items-center gap-1">
                     <NotificationBell workspaceId={workspace?._id} />
+                    <button
+                        onClick={async () => { await logout(); router.replace('/login'); }}
+                        className="rounded p-1 text-muted hover:text-primary hover-bg text-sm"
+                        title="Logout"
+                    >
+                        ⇥
+                    </button>
                     <button
                         onClick={onToggleAi}
                         className="rounded p-1 text-muted hover:text-[var(--accent)] hover-bg text-sm"

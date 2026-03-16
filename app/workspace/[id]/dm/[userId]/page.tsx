@@ -37,7 +37,7 @@ export default function DmPage() {
     ]);
 
     useEffect(() => {
-        if (!loading && !user) router.replace('/');
+        if (!loading && !user) router.replace('/login');
     }, [user, loading, router]);
 
     useEffect(() => {

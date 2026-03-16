@@ -9,9 +9,12 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user && user.workspaces?.length > 0) {
+    if (loading) return;
+    if (user && user.workspaces?.length > 0) {
       router.replace(`/workspace/${user.workspaces[0]}`);
+      return;
     }
+    router.replace('/login');
   }, [user, loading, router]);
 
   return (

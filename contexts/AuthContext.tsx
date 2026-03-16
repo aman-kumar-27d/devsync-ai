@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 
 interface UserData {
     _id: string;
-    guestId: string;
+    email: string;
     username: string;
     avatarColor: string;
     workspaces: string[];
@@ -13,10 +13,20 @@ interface UserData {
 interface AuthContextValue {
     user: UserData | null;
     loading: boolean;
+    login: (input: { email: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
+    register: (input: { email: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
+    logout: () => Promise<void>;
     refresh: () => void;
 }
 
-const AuthContext = createContext<AuthContextValue>({ user: null, loading: true, refresh: () => { } });
+const AuthContext = createContext<AuthContextValue>({
+    user: null,
+    loading: true,
+    login: async () => ({ ok: false, error: 'Not initialized' }),
+    register: async () => ({ ok: false, error: 'Not initialized' }),
+    logout: async () => { },
+    refresh: () => { },
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<UserData | null>(null);
@@ -25,11 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function init() {
         setLoading(true);
         try {
-            // Try to get existing session
-            let res = await fetch('/api/auth/guest');
+            const res = await fetch('/api/auth/me', { cache: 'no-store' });
             if (res.status === 401) {
-                // Create a new guest session
-                res = await fetch('/api/auth/guest', { method: 'POST' });
+                setUser(null);
+                return;
             }
             const data = await res.json();
             setUser(data.user ?? null);
@@ -40,10 +49,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    async function login(input: { email: string; password: string }) {
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(input),
+            });
+            const data = await res.json();
+            if (!res.ok) return { ok: false, error: data.error ?? 'Login failed' };
+            setUser(data.user ?? null);
+            return { ok: true };
+        } catch {
+            return { ok: false, error: 'Login failed' };
+        }
+    }
+
+    async function register(input: { email: string; username: string; password: string }) {
+        try {
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(input),
+            });
+            const data = await res.json();
+            if (!res.ok) return { ok: false, error: data.error ?? 'Registration failed' };
+            setUser(data.user ?? null);
+            return { ok: true };
+        } catch {
+            return { ok: false, error: 'Registration failed' };
+        }
+    }
+
+    async function logout() {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        setUser(null);
+    }
+
     useEffect(() => { init(); }, []);
 
     return (
-        <AuthContext.Provider value={{ user, loading, refresh: init }}>
+        <AuthContext.Provider value={{ user, loading, login, register, logout, refresh: init }}>
             {children}
         </AuthContext.Provider>
     );

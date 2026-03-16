@@ -16,7 +16,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         socketRef.current = socket;
 
         if (user) {
+            if (!socket.connected) {
+                socket.connect();
+            }
             socket.emit('user:join', { userId: user._id });
+        } else if (socket.connected) {
+            socket.disconnect();
         }
 
         return () => {

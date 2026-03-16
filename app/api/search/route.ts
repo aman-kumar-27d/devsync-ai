@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
 import { Snippet } from '@/models/Snippet';
 import { File } from '@/models/File';
 import { User } from '@/models/User';
 
-type SearchType = 'messages' | 'snippets' | 'files' | 'all';
+export const dynamic = 'force-dynamic';
+
+type SearchType = 'messages' | 'snippets' | 'files' | 'users' | 'all';
 
 export async function GET(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { searchParams } = new URL(req.url);
         const q = searchParams.get('q')?.trim();
@@ -55,6 +56,34 @@ export async function GET(req: NextRequest) {
                 .sort({ score: { $meta: 'textScore' } })
                 .limit(20)
                 .lean();
+        }
+
+        if (type === 'users' || type === 'all') {
+            const workspaceMembershipQuery = workspaceId ? { workspaces: workspaceId } : {};
+            const loweredQuery = q.toLowerCase();
+            const userMatches: Array<{ _id: mongoose.Types.ObjectId; username: string; email: string; avatarColor: string }> = [];
+
+            if (mongoose.Types.ObjectId.isValid(q)) {
+                const exactUser = await User.findOne({ _id: q, ...workspaceMembershipQuery })
+                    .select('_id username email avatarColor')
+                    .lean();
+                if (exactUser) userMatches.push(exactUser);
+            }
+
+            const regexMatches = await User.find({
+                ...workspaceMembershipQuery,
+                usernameLowercase: { $regex: `^${loweredQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` },
+            })
+                .select('_id username email avatarColor')
+                .sort({ usernameLowercase: 1 })
+                .limit(20)
+                .lean();
+
+            const mergedUsers = [...userMatches, ...regexMatches].filter(
+                (candidate, index, list) => index === list.findIndex((item) => item._id?.toString() === candidate._id?.toString())
+            );
+
+            results.users = mergedUsers;
         }
 
         return NextResponse.json({ results });

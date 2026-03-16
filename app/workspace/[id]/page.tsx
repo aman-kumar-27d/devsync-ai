@@ -23,7 +23,7 @@ export default function WorkspacePage() {
     const [aiOpen, setAiOpen] = useState(false);
 
     useEffect(() => {
-        if (!loading && !user) router.replace('/');
+        if (!loading && !user) router.replace('/login');
     }, [user, loading, router]);
 
     useEffect(() => {

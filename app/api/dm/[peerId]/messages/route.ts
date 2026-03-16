@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
-import { User } from '@/models/User';
 
 const PAGE_SIZE = 50;
 
@@ -9,11 +9,8 @@ const PAGE_SIZE = 50;
 export async function GET(req: NextRequest, { params }: { params: { peerId: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const dmPairId = [user._id.toString(), params.peerId].sort().join('-');
         const { searchParams } = new URL(req.url);
@@ -25,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { peerId: stri
         const messages = await Message.find(query)
             .sort({ createdAt: -1 })
             .limit(PAGE_SIZE)
-            .populate('senderId', 'username avatarColor guestId')
+            .populate('senderId', 'username avatarColor email')
             .lean();
 
         return NextResponse.json({ messages: messages.reverse() });
@@ -39,11 +36,8 @@ export async function GET(req: NextRequest, { params }: { params: { peerId: stri
 export async function POST(req: NextRequest, { params }: { params: { peerId: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId });
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { content } = await req.json();
         if (!content || typeof content !== 'string') {
@@ -57,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { peerId: str
             content: content.slice(0, 10000),
             type: 'text',
         });
-        const populated = await message.populate('senderId', 'username avatarColor guestId');
+        const populated = await message.populate('senderId', 'username avatarColor email');
 
         if (global.io) {
             const room = `dm:${dmPairId}`;

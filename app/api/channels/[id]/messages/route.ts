@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
-import { User } from '@/models/User';
 
 const PAGE_SIZE = 50;
 
@@ -9,8 +9,8 @@ const PAGE_SIZE = 50;
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { error } = await requireAuthUser(req);
+        if (error) return error;
 
         const { searchParams } = new URL(req.url);
         const cursor = searchParams.get('cursor');
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         const messages = await Message.find(query)
             .sort({ createdAt: -1 })
             .limit(PAGE_SIZE)
-            .populate('senderId', 'username avatarColor guestId')
+            .populate('senderId', 'username avatarColor email')
             .lean();
 
         return NextResponse.json({ messages: messages.reverse() });
@@ -43,11 +43,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId });
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await req.json();
         const { content, type = 'text', threadId } = body;
@@ -65,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         if (threadId) messageData.threadId = threadId;
 
         const message = await Message.create(messageData);
-        const populated = await message.populate('senderId', 'username avatarColor guestId');
+        const populated = await message.populate('senderId', 'username avatarColor email');
 
         // Emit via Socket.io
         if (global.io) {

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { File } from '@/models/File';
-import { User } from '@/models/User';
 
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
@@ -18,11 +18,8 @@ const ALLOWED_MIME_TYPES = new Set([
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const workspaceId = req.nextUrl.searchParams.get('workspaceId');
         if (!workspaceId) return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });

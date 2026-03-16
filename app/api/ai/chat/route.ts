@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { AiSession } from '@/models/AiSession';
-import { User } from '@/models/User';
 import { getFlashModel, getProModel } from '@/lib/gemini';
 import { buildSystemPrompt, buildUserMessage, AiMode } from '@/lib/promptEngine';
 
-// Simple in-memory rate limiter: max 30 requests per guestId per minute
+// Simple in-memory rate limiter: max 30 requests per user per minute
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-function checkRateLimit(guestId: string): boolean {
+function checkRateLimit(userId: string): boolean {
     const now = Date.now();
-    const entry = rateLimitMap.get(guestId);
+    const entry = rateLimitMap.get(userId);
     if (!entry || now > entry.resetAt) {
-        rateLimitMap.set(guestId, { count: 1, resetAt: now + 60_000 });
+        rateLimitMap.set(userId, { count: 1, resetAt: now + 60_000 });
         return true;
     }
     if (entry.count >= 30) return false;
@@ -23,15 +23,12 @@ function checkRateLimit(guestId: string): boolean {
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        if (!checkRateLimit(guestId)) {
+        if (!checkRateLimit(user._id.toString())) {
             return NextResponse.json({ error: 'Rate limit exceeded. Try again in a moment.' }, { status: 429 });
         }
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await req.json();
         const { message, mode = 'chat', useProModel = false, workspaceId } = body as {
@@ -100,11 +97,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { searchParams } = new URL(req.url);
         const mode = searchParams.get('mode') as AiMode | null;

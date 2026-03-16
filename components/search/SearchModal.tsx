@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface SearchResult {
     messages: { _id: string; content: string; senderId: { username: string } }[];
     snippets: { _id: string; code: string; language: string }[];
     files: { _id: string; originalName: string; url: string; mimetype: string }[];
+    users: { _id: string; username: string; email: string; avatarColor: string }[];
 }
 
 interface Props {
@@ -14,6 +16,7 @@ interface Props {
 }
 
 export default function SearchModal({ workspaceId, onClose }: Props) {
+    const router = useRouter();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult | null>(null);
     const [loading, setLoading] = useState(false);
@@ -112,7 +115,37 @@ export default function SearchModal({ workspaceId, onClose }: Props) {
                                 ))}
                             </section>
                         )}
-                        {results.messages?.length === 0 && results.snippets?.length === 0 && results.files?.length === 0 && (
+                        {results.users?.length > 0 && (
+                            <section className="px-4 py-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Users</p>
+                                {results.users.map((u) => (
+                                    <div
+                                        key={u._id}
+                                        className="rounded px-2 py-1.5 hover-bg cursor-pointer"
+                                        onClick={() => {
+                                            if (workspaceId) {
+                                                router.push(`/workspace/${workspaceId}/dm/${u._id}`);
+                                            }
+                                            onClose();
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                                style={{ backgroundColor: u.avatarColor }}
+                                            >
+                                                {u.username[0]?.toUpperCase()}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-medium text-primary truncate">{u.username}</p>
+                                                <p className="text-[10px] text-muted truncate">{u.email} · {u._id}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </section>
+                        )}
+                        {results.messages?.length === 0 && results.snippets?.length === 0 && results.files?.length === 0 && results.users?.length === 0 && (
                             <p className="py-6 text-center text-xs text-muted">No results found</p>
                         )}
                     </div>

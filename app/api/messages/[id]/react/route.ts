@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
-import { User } from '@/models/User';
 
 // POST /api/messages/[id]/react  — toggle a reaction emoji
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { emoji } = await req.json();
         if (!emoji || typeof emoji !== 'string') {

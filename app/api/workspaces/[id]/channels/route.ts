@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { requireAuthUser } from '@/lib/auth';
 import { Channel } from '@/models/Channel';
 import { Workspace } from '@/models/Workspace';
-import { User } from '@/models/User';
 
 // POST /api/workspaces/[id]/channels  — create a channel
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         await connectDB();
-        const guestId = req.cookies.get('guestId')?.value;
-        if (!guestId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const user = await User.findOne({ guestId }).lean();
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const { error } = await requireAuthUser(req);
+        if (error) return error;
 
         const { name, type = 'text' } = await req.json();
         if (!name || typeof name !== 'string') {
