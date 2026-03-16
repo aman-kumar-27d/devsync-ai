@@ -41,8 +41,15 @@ export default function MessageList({ messages, loading, currentUserId, channelI
         <div ref={containerRef} className="flex flex-1 flex-col overflow-y-auto px-4 py-2 gap-0.5">
             {messages.map((msg, i) => {
                 const prevMsg = messages[i - 1];
-                const sameSender = prevMsg?.senderId?._id === msg.senderId?._id &&
-                    new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime() < 5 * 60 * 1000;
+                if (!msg) return null;
+
+                const prevSenderId = prevMsg?.senderId?._id;
+                const currentSenderId = msg.senderId?._id;
+                const canCompareTime = Boolean(prevMsg?.createdAt && msg.createdAt && prevSenderId && currentSenderId);
+                const sameSender =
+                    canCompareTime &&
+                    prevSenderId === currentSenderId &&
+                    new Date(msg.createdAt).getTime() - new Date(prevMsg!.createdAt).getTime() < 5 * 60 * 1000;
                 return (
                     <MessageItem
                         key={msg._id}

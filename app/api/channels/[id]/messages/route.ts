@@ -2,15 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
+import { resolveChannelWorkspace, assertWorkspaceMember } from '@/lib/guards';
 
 const PAGE_SIZE = 50;
 
 // GET /api/channels/[id]/messages?cursor=<lastMessageId>&threadId=<id>
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     try {
+
         await connectDB();
-        const { error } = await requireAuthUser(req);
-        if (error) return error;
+        const { user, error } = await requireAuthUser(req);
+        if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        // Membership check
+        const workspaceId = await resolveChannelWorkspace(params.id);
+        await assertWorkspaceMember(user._id.toString(), workspaceId);
 
         const { searchParams } = new URL(req.url);
         const cursor = searchParams.get('cursor');
@@ -34,6 +40,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
         return NextResponse.json({ messages: messages.reverse() });
     } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 403 || status === 404) {
+            return NextResponse.json({ error: (err as Error).message }, { status });
+        }
         console.error('[messages GET]', err);
         return NextResponse.json({ error: 'Server error' }, { status: 500 });
     }
@@ -42,9 +52,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 // POST /api/channels/[id]/messages  — persist a new message
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
     try {
+
         await connectDB();
         const { user, error } = await requireAuthUser(req);
         if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        // Membership check
+        const workspaceId = await resolveChannelWorkspace(params.id);
+        await assertWorkspaceMember(user._id.toString(), workspaceId);
 
         const body = await req.json();
         const { content, type = 'text', threadId } = body;
@@ -71,6 +86,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
         return NextResponse.json({ message: populated }, { status: 201 });
     } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 403 || status === 404) {
+            return NextResponse.json({ error: (err as Error).message }, { status });
+        }
         console.error('[messages POST]', err);
         return NextResponse.json({ error: 'Server error' }, { status: 500 });
     }

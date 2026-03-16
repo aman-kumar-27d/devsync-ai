@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { requireAuthUser } from '@/lib/auth';
 import { Message } from '@/models/Message';
+import { Types } from 'mongoose';
+import { User } from '@/models/User';
 
 const PAGE_SIZE = 50;
 
@@ -11,6 +13,15 @@ export async function GET(req: NextRequest, { params }: { params: { peerId: stri
         await connectDB();
         const { user, error } = await requireAuthUser(req);
         if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        if (!Types.ObjectId.isValid(params.peerId)) {
+            return NextResponse.json({ error: 'Invalid peerId' }, { status: 400 });
+        }
+
+        const peerExists = await User.exists({ _id: params.peerId });
+        if (!peerExists) {
+            return NextResponse.json({ error: 'Peer not found' }, { status: 404 });
+        }
 
         const dmPairId = [user._id.toString(), params.peerId].sort().join('-');
         const { searchParams } = new URL(req.url);
@@ -38,6 +49,15 @@ export async function POST(req: NextRequest, { params }: { params: { peerId: str
         await connectDB();
         const { user, error } = await requireAuthUser(req);
         if (error || !user) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        if (!Types.ObjectId.isValid(params.peerId)) {
+            return NextResponse.json({ error: 'Invalid peerId' }, { status: 400 });
+        }
+
+        const peerExists = await User.exists({ _id: params.peerId });
+        if (!peerExists) {
+            return NextResponse.json({ error: 'Peer not found' }, { status: 404 });
+        }
 
         const { content } = await req.json();
         if (!content || typeof content !== 'string') {
