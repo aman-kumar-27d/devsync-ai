@@ -6,6 +6,38 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
 const dev = process.env.NODE_ENV !== 'production';
+
+// ---------------------------------------------------------------------------
+// In-process socket event rate limiter (fixed-window, per-user per-event).
+// Falls back gracefully if userId is absent (join-only events are not limited).
+// For horizontal-scale deployments, swap _socketRlStore for a Redis-backed
+// variant using the same INCR+EXPIRE pattern as lib/rateLimiter.ts.
+// ---------------------------------------------------------------------------
+const _socketRlStore = new Map(); // key -> count
+let _socketRlLastPrune = Date.now();
+
+function socketAllowed(userId, event, limit, windowSeconds) {
+    if (!userId) return true; // unauthenticated sockets are handled by io.use middleware
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+
+    // Prune stale entries every 5 minutes
+    if (now - _socketRlLastPrune > 5 * 60 * 1000) {
+        _socketRlStore.forEach(function (_, k) {
+            const ts = Number(k.split(':')[2]);
+            if (!isNaN(ts) && ts < now - windowMs * 2) {
+                _socketRlStore.delete(k);
+            }
+        });
+        _socketRlLastPrune = now;
+    }
+
+    const windowStart = Math.floor(now / windowMs) * windowMs;
+    const key = event + ':' + userId + ':' + windowStart;
+    const count = (_socketRlStore.get(key) || 0) + 1;
+    _socketRlStore.set(key, count);
+    return count <= limit;
+}
 const app = next({ dev });
 const handle = app.getRequestHandler();
 const PORT = process.env.PORT || 3000;
@@ -93,13 +125,21 @@ app.prepare().then(() => {
             socket.data.userId = userId;
         });
 
-        // Send a message in a channel
+        // Send a message in a channel (rate-limited: 20 per minute per user)
         socket.on('message:send', (message) => {
+            if (!socketAllowed(socket.data.userId, 'msg_send', 20, 60)) {
+                socket.emit('rate:limited', { event: 'message:send', retryAfterSeconds: 60 });
+                return;
+            }
             io.to(`channel:${message.channelId}`).emit('message:new', message);
         });
 
-        // Send a DM
+        // Send a DM (rate-limited: 20 per minute per user)
         socket.on('dm:send', (message) => {
+            if (!socketAllowed(socket.data.userId, 'dm_send', 20, 60)) {
+                socket.emit('rate:limited', { event: 'dm:send', retryAfterSeconds: 60 });
+                return;
+            }
             const room = `dm:${[message.senderId, message.recipientId].sort().join('-')}`;
             io.to(room).emit('message:new', message);
         });
@@ -114,13 +154,21 @@ app.prepare().then(() => {
             io.to(`channel:${data.channelId}`).emit('message:deleted', data);
         });
 
-        // React to a message
+        // React to a message (rate-limited: 30 per minute per user)
         socket.on('message:react', (data) => {
+            if (!socketAllowed(socket.data.userId, 'msg_react', 30, 60)) {
+                socket.emit('rate:limited', { event: 'message:react', retryAfterSeconds: 60 });
+                return;
+            }
             io.to(`channel:${data.channelId}`).emit('message:reacted', data);
         });
 
-        // Thread reply
+        // Thread reply (rate-limited: 20 per minute per user)
         socket.on('thread:reply', (message) => {
+            if (!socketAllowed(socket.data.userId, 'thread_reply', 20, 60)) {
+                socket.emit('rate:limited', { event: 'thread:reply', retryAfterSeconds: 60 });
+                return;
+            }
             io.to(`channel:${message.channelId}`).emit('thread:new', message);
         });
 
