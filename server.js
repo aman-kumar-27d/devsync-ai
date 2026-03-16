@@ -172,6 +172,17 @@ app.prepare().then(() => {
             io.to(`channel:${message.channelId}`).emit('thread:new', message);
         });
 
+        // Typing indicators — broadcast to room, exclude sender
+        socket.on('typing:start', ({ roomId, userId, username }) => {
+            if (!socket.data.userId || !roomId || !userId || !username) return;
+            socket.to(roomId).emit('typing:start', { roomId, userId, username });
+        });
+
+        socket.on('typing:stop', ({ roomId, userId }) => {
+            if (!socket.data.userId || !roomId || !userId) return;
+            socket.to(roomId).emit('typing:stop', { roomId, userId });
+        });
+
         socket.on('disconnect', () => {
             console.log(`Socket disconnected: ${socket.id}`);
         });

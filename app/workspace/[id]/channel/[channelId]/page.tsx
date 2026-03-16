@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import MessageList from '@/components/chat/MessageList';
 import MessageComposer from '@/components/chat/MessageComposer';
 import ThreadPanel from '@/components/chat/ThreadPanel';
+import TypingIndicator from '@/components/chat/TypingIndicator';
 import AiPanel from '@/components/ai/AiPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/lib/socket';
@@ -33,6 +34,8 @@ export default function ChannelPage() {
     const [aiSnippet, setAiSnippet] = useState<string | undefined>();
     const [searchOpen, setSearchOpen] = useState(false);
     const [loadingMsgs, setLoadingMsgs] = useState(true);
+    const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
+    const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     useHotkeys([
         { key: 'k', ctrl: true, handler: () => setSearchOpen(true) },
@@ -100,12 +103,37 @@ export default function ChannelPage() {
         socket.on('message:deleted', onDeleted);
         socket.on('message:reacted', onReacted);
 
+        const onTypingStart = ({ userId, username }: { userId: string; username: string }) => {
+            setTypingUsers((prev) => {
+                const next = new Map(prev);
+                next.set(userId, username);
+                return next;
+            });
+            // Auto-clear after 5s if no stop event arrives
+            const existing = typingTimers.current.get(userId);
+            if (existing) clearTimeout(existing);
+            typingTimers.current.set(userId, setTimeout(() => {
+                setTypingUsers((prev) => { const n = new Map(prev); n.delete(userId); return n; });
+            }, 5000));
+        };
+        const onTypingStop = ({ userId }: { userId: string }) => {
+            const t = typingTimers.current.get(userId);
+            if (t) { clearTimeout(t); typingTimers.current.delete(userId); }
+            setTypingUsers((prev) => { const n = new Map(prev); n.delete(userId); return n; });
+        };
+        socket.on('typing:start', onTypingStart);
+        socket.on('typing:stop', onTypingStop);
+
         return () => {
             socket.emit('channel:leave', { channelId });
             socket.off('message:new', onNew);
             socket.off('message:edited', onEdited);
             socket.off('message:deleted', onDeleted);
             socket.off('message:reacted', onReacted);
+            socket.off('typing:start', onTypingStart);
+            socket.off('typing:stop', onTypingStop);
+            typingTimers.current.forEach((t) => clearTimeout(t));
+            typingTimers.current.clear();
         };
     }, [channelId]);
 
@@ -138,6 +166,7 @@ export default function ChannelPage() {
                             onExplainSnippet={handleExplainSnippet}
                             channelId={channelId}
                         />
+                        <TypingIndicator usernames={Array.from(typingUsers.values())} />
                         <MessageComposer channelId={channelId} workspaceId={workspaceId} />
                     </div>
                     {threadMessage && (

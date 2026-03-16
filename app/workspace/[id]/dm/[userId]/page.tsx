@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import MessageList from '@/components/chat/MessageList';
 import MessageComposer from '@/components/chat/MessageComposer';
+import TypingIndicator from '@/components/chat/TypingIndicator';
 import AiPanel from '@/components/ai/AiPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/lib/socket';
@@ -29,6 +30,8 @@ export default function DmPage() {
     const [aiOpen, setAiOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [loadingMsgs, setLoadingMsgs] = useState(true);
+    const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
+    const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     useHotkeys([
         { key: 'k', ctrl: true, handler: () => setSearchOpen(true) },
@@ -70,8 +73,29 @@ export default function DmPage() {
         const onNew = (msg: MessageData) => {
             setMessages((prev) => [...prev, msg]);
         };
+        const onTypingStart = ({ userId, username }: { userId: string; username: string }) => {
+            setTypingUsers((prev) => { const n = new Map(prev); n.set(userId, username); return n; });
+            const existing = typingTimers.current.get(userId);
+            if (existing) clearTimeout(existing);
+            typingTimers.current.set(userId, setTimeout(() => {
+                setTypingUsers((prev) => { const n = new Map(prev); n.delete(userId); return n; });
+            }, 5000));
+        };
+        const onTypingStop = ({ userId }: { userId: string }) => {
+            const t = typingTimers.current.get(userId);
+            if (t) { clearTimeout(t); typingTimers.current.delete(userId); }
+            setTypingUsers((prev) => { const n = new Map(prev); n.delete(userId); return n; });
+        };
         socket.on('message:new', onNew);
-        return () => { socket.off('message:new', onNew); };
+        socket.on('typing:start', onTypingStart);
+        socket.on('typing:stop', onTypingStop);
+        return () => {
+            socket.off('message:new', onNew);
+            socket.off('typing:start', onTypingStart);
+            socket.off('typing:stop', onTypingStop);
+            typingTimers.current.forEach((t) => clearTimeout(t));
+            typingTimers.current.clear();
+        };
     }, [user, peerId]);
 
     const peer = workspace?.members.find((m) => m._id === peerId);
@@ -96,6 +120,7 @@ export default function DmPage() {
                         currentUserId={user?._id ?? ''}
                         channelId=""
                     />
+                    <TypingIndicator usernames={Array.from(typingUsers.values())} />
                     <MessageComposer peerId={peerId} workspaceId={workspaceId} />
                 </div>
             </main>
