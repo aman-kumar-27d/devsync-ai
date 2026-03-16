@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import SearchModal from '@/components/search/SearchModal';
@@ -52,6 +53,15 @@ export default function Header({
                         <span className="hidden sm:inline">Search</span>
                         <kbd className="hidden sm:inline text-[10px] opacity-50 ml-1">Ctrl K</kbd>
                     </button>
+
+                    <Link
+                        href="/docs"
+                        className="rounded px-2 py-1 text-xs text-muted hover:text-primary hover-bg flex items-center gap-1"
+                        title="Documentation"
+                    >
+                        <span>?</span>
+                        <span className="hidden sm:inline">Docs</span>
+                    </Link>
 
                     {/* Theme toggle */}
                     <button
