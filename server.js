@@ -1,9 +1,10 @@
 // Custom Node.js server: bootstraps Next.js + Socket.io on the same port
-const { createServer } = require('http');
-const { parse } = require('url');
-const next = require('next');
-const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
+import { createServer } from 'node:http';
+import dns from 'node:dns';
+import next from 'next';
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 
 const dev = process.env.NODE_ENV !== 'production';
 
@@ -43,6 +44,32 @@ const handle = app.getRequestHandler();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'devcollab-ai-local-jwt-secret';
 
+function configureDnsForMongo() {
+    const configured = process.env.MONGODB_DNS_SERVERS;
+    if (configured) {
+        const servers = configured
+            .split(',')
+            .map((server) => server.trim())
+            .filter(Boolean);
+        if (servers.length > 0) {
+            dns.setServers(servers);
+            console.log(`Using custom DNS servers for MongoDB: ${servers.join(', ')}`);
+            return;
+        }
+    }
+
+    const currentServers = dns.getServers();
+    if (currentServers.length === 1 && currentServers[0] === '127.0.0.1') {
+        const fallbackServers = ['8.8.8.8', '1.1.1.1'];
+        dns.setServers(fallbackServers);
+        console.warn(
+            `Local DNS resolver ${currentServers[0]} refused SRV lookups; switched to ${fallbackServers.join(', ')}`,
+        );
+    }
+}
+
+configureDnsForMongo();
+
 function parseCookies(cookieHeader = '') {
     return cookieHeader
         .split(';')
@@ -64,8 +91,9 @@ app.prepare().then(() => {
         if (req.url && req.url.startsWith('/socket.io')) {
             return;
         }
-        const parsedUrl = parse(req.url, true);
-        handle(req, res, parsedUrl);
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const query = Object.fromEntries(url.searchParams);
+        handle(req, res, { pathname: url.pathname, query });
     });
 
     const io = new Server(httpServer, {
@@ -188,7 +216,21 @@ app.prepare().then(() => {
         });
     });
 
-    httpServer.listen(PORT, () => {
-        console.log(`> Ready on http://localhost:${PORT} (${dev ? 'dev' : 'prod'})`);
+    httpServer.listen(PORT, async () => {
+        console.log(`> Server ready on http://localhost:${PORT} (${dev ? 'dev' : 'prod'})`);
+
+        // Connect to MongoDB
+        try {
+            const MONGODB_URI = process.env.MONGODB_URI;
+            if (!MONGODB_URI) {
+                console.error('❌ Database connection failed: MONGODB_URI not set in .env');
+                return;
+            }
+
+            await mongoose.connect(MONGODB_URI, { bufferCommands: false });
+            console.log('✓ Database connection successful');
+        } catch (error) {
+            console.error('❌ Database connection failed:', error.message);
+        }
     });
 });

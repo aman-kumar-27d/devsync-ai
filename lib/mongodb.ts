@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI!;
-if (!MONGODB_URI) throw new Error('Please define MONGODB_URI in .env.local');
+if (!MONGODB_URI) throw new Error('Please define MONGODB_URI in .env or .env.local');
 
 // Module-level cache to avoid creating multiple connections in dev (hot-reload)
 interface MongoCache {

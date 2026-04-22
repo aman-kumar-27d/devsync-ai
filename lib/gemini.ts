@@ -30,7 +30,7 @@ export function getFlashModel(systemPrompt?: string) {
 
 export function getProModel(systemPrompt?: string) {
     return genAI.getGenerativeModel({
-        model: 'gemini-1.5-pro',
+        model: 'gemini-3.5-pro',
         safetySettings,
         systemInstruction: buildSystemInstruction(systemPrompt),
     });
